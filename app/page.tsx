@@ -33,6 +33,7 @@ export default function Home() {
   );
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [resultView, setResultView] = useState<"full" | "near">("full");
 
   useEffect(() => {
     loadIngredients();
@@ -78,6 +79,7 @@ export default function Home() {
     setSuggestLoading(true);
     setSuggestError(null);
     setSuggestions(null);
+    setResultView("full");
     setTab("recipes");
 
     const res = await fetch("/api/suggest", {
@@ -138,6 +140,8 @@ export default function Home() {
             suggestError={suggestError}
             suggestions={suggestions}
             hasIngredients={ingredients.length > 0}
+            resultView={resultView}
+            setResultView={setResultView}
           />
         )}
       </main>
@@ -367,6 +371,8 @@ function RecipesView({
   suggestError,
   suggestions,
   hasIngredients,
+  resultView,
+  setResultView,
 }: {
   servings: number;
   setServings: (n: number) => void;
@@ -375,6 +381,8 @@ function RecipesView({
   suggestError: string | null;
   suggestions: SuggestResponse | null;
   hasIngredients: boolean;
+  resultView: "full" | "near";
+  setResultView: (v: "full" | "near") => void;
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -399,22 +407,37 @@ function RecipesView({
       )}
 
       {suggestions && (
-        <div className="flex flex-col gap-8">
-          <section>
-            <h2 className="mb-3 text-lg font-semibold text-orange-900 dark:text-orange-100">
-              🍳 지금 바로 만들 수 있어요
-            </h2>
+        <div className="flex flex-col gap-4">
+          <div className="flex gap-2 rounded-xl bg-orange-100/60 p-1 dark:bg-zinc-800">
+            <button
+              onClick={() => setResultView("full")}
+              className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
+                resultView === "full"
+                  ? "bg-white text-orange-900 shadow-sm dark:bg-zinc-900 dark:text-orange-100"
+                  : "text-orange-700/60 dark:text-orange-200/50"
+              }`}
+            >
+              🍳 지금 바로 ({suggestions.fullMatches.length})
+            </button>
+            <button
+              onClick={() => setResultView("near")}
+              className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
+                resultView === "near"
+                  ? "bg-white text-orange-900 shadow-sm dark:bg-zinc-900 dark:text-orange-100"
+                  : "text-orange-700/60 dark:text-orange-200/50"
+              }`}
+            >
+              🛒 조금만 더 사면 ({suggestions.nearMisses.length})
+            </button>
+          </div>
+
+          {resultView === "full" ? (
             <div className="flex flex-col gap-4">
               {suggestions.fullMatches.map((recipe, i) => (
                 <RecipeCard key={i} recipe={recipe} />
               ))}
             </div>
-          </section>
-
-          <section>
-            <h2 className="mb-3 text-lg font-semibold text-orange-900 dark:text-orange-100">
-              🛒 조금만 더 사면 만들 수 있어요
-            </h2>
+          ) : (
             <div className="flex flex-col gap-4">
               {suggestions.nearMisses.map((recipe, i) => (
                 <RecipeCard
@@ -424,7 +447,7 @@ function RecipesView({
                 />
               ))}
             </div>
-          </section>
+          )}
         </div>
       )}
     </div>
