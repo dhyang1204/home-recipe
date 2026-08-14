@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Recipe, NearMissRecipe } from "@/lib/anthropic";
+import { CATEGORIES, type CategoryId } from "@/lib/categories";
+import type { Recipe, NearMissRecipe, IngredientAmount } from "@/lib/anthropic";
 
 interface Ingredient {
   id: string;
   name: string;
+  category: string;
   created_at: string;
 }
 
@@ -14,12 +16,18 @@ interface SuggestResponse {
   nearMisses: NearMissRecipe[];
 }
 
+type Tab = "ingredients" | "recipes";
+
 export default function Home() {
+  const [tab, setTab] = useState<Tab>("ingredients");
+
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [loadingIngredients, setLoadingIngredients] = useState(true);
   const [newName, setNewName] = useState("");
+  const [newCategory, setNewCategory] = useState<CategoryId>("veggie");
   const [addError, setAddError] = useState<string | null>(null);
 
+  const [servings, setServings] = useState(2);
   const [suggestions, setSuggestions] = useState<SuggestResponse | null>(
     null,
   );
@@ -47,7 +55,7 @@ export default function Home() {
     const res = await fetch("/api/ingredients", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, category: newCategory }),
     });
 
     if (res.ok) {
@@ -70,8 +78,13 @@ export default function Home() {
     setSuggestLoading(true);
     setSuggestError(null);
     setSuggestions(null);
+    setTab("recipes");
 
-    const res = await fetch("/api/suggest", { method: "POST" });
+    const res = await fetch("/api/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ servings }),
+    });
     const data = await res.json();
 
     if (res.ok) {
@@ -82,74 +95,302 @@ export default function Home() {
     setSuggestLoading(false);
   }
 
+  const grouped = CATEGORIES.map((cat) => ({
+    ...cat,
+    items: ingredients.filter((i) => i.category === cat.id),
+  })).filter((g) => g.items.length > 0);
+
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-4 py-8">
-      <header>
-        <h1 className="text-2xl font-semibold">집밥 레시피</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+    <div className="flex min-h-dvh flex-col">
+      <header className="border-b border-orange-100 bg-white/80 px-4 py-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
+        <h1 className="flex items-center gap-2 text-xl font-bold text-orange-900 dark:text-orange-100">
+          <span className="text-2xl">🍚</span> 집밥 레시피
+        </h1>
+        <p className="mt-0.5 text-sm text-orange-700/70 dark:text-orange-200/50">
           지금 있는 재료로 뭘 만들 수 있을까요?
         </p>
       </header>
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-zinc-500">
-          내 재료 ({ingredients.length})
-        </h2>
-        <form onSubmit={handleAdd} className="mb-3 flex gap-2">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="예: 계란"
-            className="flex-1 rounded-lg border border-black/10 bg-transparent px-4 py-2.5 text-base outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40"
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-28 pt-5">
+        {tab === "ingredients" ? (
+          <IngredientsView
+            grouped={grouped}
+            totalCount={ingredients.length}
+            loading={loadingIngredients}
+            newName={newName}
+            setNewName={setNewName}
+            newCategory={newCategory}
+            setNewCategory={setNewCategory}
+            addError={addError}
+            onAdd={handleAdd}
+            onRemove={handleRemove}
+            servings={servings}
+            setServings={setServings}
+            onSuggest={handleSuggest}
+            suggestLoading={suggestLoading}
           />
+        ) : (
+          <RecipesView
+            servings={servings}
+            setServings={setServings}
+            onSuggest={handleSuggest}
+            suggestLoading={suggestLoading}
+            suggestError={suggestError}
+            suggestions={suggestions}
+            hasIngredients={ingredients.length > 0}
+          />
+        )}
+      </main>
+
+      <nav className="fixed inset-x-0 bottom-0 border-t border-orange-100 bg-white/95 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
+        <div className="mx-auto flex max-w-2xl">
+          <TabButton
+            active={tab === "ingredients"}
+            emoji="🥬"
+            label="내 재료"
+            onClick={() => setTab("ingredients")}
+          />
+          <TabButton
+            active={tab === "recipes"}
+            emoji="🍳"
+            label="레시피 추천"
+            onClick={() => setTab("recipes")}
+          />
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  emoji,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  emoji: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition-colors ${
+        active
+          ? "text-orange-600 dark:text-orange-400"
+          : "text-zinc-400 dark:text-zinc-500"
+      }`}
+    >
+      <span className="text-xl">{emoji}</span>
+      {label}
+    </button>
+  );
+}
+
+function IngredientsView({
+  grouped,
+  totalCount,
+  loading,
+  newName,
+  setNewName,
+  newCategory,
+  setNewCategory,
+  addError,
+  onAdd,
+  onRemove,
+  servings,
+  setServings,
+  onSuggest,
+  suggestLoading,
+}: {
+  grouped: Array<{
+    id: string;
+    label: string;
+    emoji: string;
+    items: Ingredient[];
+  }>;
+  totalCount: number;
+  loading: boolean;
+  newName: string;
+  setNewName: (v: string) => void;
+  newCategory: CategoryId;
+  setNewCategory: (v: CategoryId) => void;
+  addError: string | null;
+  onAdd: (e: React.FormEvent) => void;
+  onRemove: (id: string) => void;
+  servings: number;
+  setServings: (n: number) => void;
+  onSuggest: () => void;
+  suggestLoading: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-6">
+      <form
+        onSubmit={onAdd}
+        className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="예: 계란"
+          className="w-full rounded-lg border border-orange-100 bg-transparent px-4 py-2.5 text-base outline-none focus:border-orange-400 dark:border-zinc-700 dark:focus:border-orange-500"
+        />
+        <div className="mt-2 flex gap-2">
+          <select
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value as CategoryId)}
+            className="min-w-0 flex-1 rounded-lg border border-orange-100 bg-transparent px-3 py-2.5 text-sm outline-none focus:border-orange-400 dark:border-zinc-700 dark:focus:border-orange-500"
+          >
+            {CATEGORIES.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.emoji} {c.label}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             disabled={newName.trim().length === 0}
-            className="rounded-lg bg-black px-5 py-2.5 font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+            className="shrink-0 whitespace-nowrap rounded-lg bg-orange-600 px-5 py-2.5 font-medium text-white disabled:opacity-40"
           >
             추가
           </button>
-        </form>
+        </div>
         {addError && (
-          <p className="mb-3 text-sm text-red-600 dark:text-red-400">
+          <p className="mt-2 text-sm text-red-600 dark:text-red-400">
             {addError}
           </p>
         )}
+      </form>
 
-        {loadingIngredients ? (
+      <section>
+        <h2 className="mb-3 text-sm font-medium text-zinc-500">
+          내 재료 ({totalCount})
+        </h2>
+
+        {loading ? (
           <p className="text-sm text-zinc-400">불러오는 중...</p>
-        ) : ingredients.length === 0 ? (
+        ) : grouped.length === 0 ? (
           <p className="text-sm text-zinc-400">
-            아직 등록된 재료가 없어요. 재료를 추가해보세요.
+            아직 등록된 재료가 없어요. 위에서 재료를 추가해보세요.
           </p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {ingredients.map((ing) => (
-              <span
-                key={ing.id}
-                className="flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1.5 text-sm dark:bg-zinc-800"
-              >
-                {ing.name}
-                <button
-                  onClick={() => handleRemove(ing.id)}
-                  aria-label={`${ing.name} 삭제`}
-                  className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-                >
-                  ✕
-                </button>
-              </span>
+          <div className="flex flex-col gap-4">
+            {grouped.map((group) => (
+              <div key={group.id}>
+                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-orange-700/80 dark:text-orange-300/70">
+                  <span>{group.emoji}</span>
+                  {group.label}
+                  <span className="text-zinc-400">({group.items.length})</span>
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {group.items.map((ing) => (
+                    <span
+                      key={ing.id}
+                      className="flex items-center gap-1.5 rounded-full bg-orange-50 px-3 py-1.5 text-sm text-orange-900 dark:bg-zinc-800 dark:text-orange-100"
+                    >
+                      {ing.name}
+                      <button
+                        onClick={() => onRemove(ing.id)}
+                        aria-label={`${ing.name} 삭제`}
+                        className="text-orange-400 hover:text-orange-700 dark:hover:text-orange-200"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}
       </section>
 
+      <ServingsAndSuggestButton
+        servings={servings}
+        setServings={setServings}
+        onSuggest={onSuggest}
+        disabled={totalCount === 0}
+        loading={suggestLoading}
+      />
+    </div>
+  );
+}
+
+function ServingsAndSuggestButton({
+  servings,
+  setServings,
+  onSuggest,
+  disabled,
+  loading,
+}: {
+  servings: number;
+  setServings: (n: number) => void;
+  onSuggest: () => void;
+  disabled: boolean;
+  loading: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="mb-2 text-sm font-medium text-zinc-500">인분 수</p>
+      <div className="mb-4 flex gap-2">
+        {[1, 2, 3, 4, 5, 6].map((n) => (
+          <button
+            key={n}
+            onClick={() => setServings(n)}
+            className={`h-10 w-10 shrink-0 rounded-full text-sm font-medium transition-colors ${
+              servings === n
+                ? "bg-orange-600 text-white"
+                : "bg-orange-50 text-orange-800 dark:bg-zinc-800 dark:text-orange-200"
+            }`}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
       <button
-        onClick={handleSuggest}
-        disabled={suggestLoading || ingredients.length === 0}
-        className="sticky top-4 z-10 w-full rounded-xl bg-black py-3.5 text-base font-semibold text-white shadow-md disabled:opacity-40 dark:bg-white dark:text-black"
+        onClick={onSuggest}
+        disabled={disabled || loading}
+        className="w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md disabled:opacity-40"
       >
-        {suggestLoading ? "레시피 생각 중..." : "레시피 추천받기"}
+        {loading ? "레시피 생각 중..." : `${servings}인분 레시피 추천받기`}
       </button>
+    </div>
+  );
+}
+
+function RecipesView({
+  servings,
+  setServings,
+  onSuggest,
+  suggestLoading,
+  suggestError,
+  suggestions,
+  hasIngredients,
+}: {
+  servings: number;
+  setServings: (n: number) => void;
+  onSuggest: () => void;
+  suggestLoading: boolean;
+  suggestError: string | null;
+  suggestions: SuggestResponse | null;
+  hasIngredients: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-6">
+      <ServingsAndSuggestButton
+        servings={servings}
+        setServings={setServings}
+        onSuggest={onSuggest}
+        disabled={!hasIngredients}
+        loading={suggestLoading}
+      />
+
+      {!hasIngredients && !suggestions && (
+        <p className="text-center text-sm text-zinc-400">
+          먼저 &apos;내 재료&apos; 탭에서 재료를 추가해주세요.
+        </p>
+      )}
 
       {suggestError && (
         <p className="text-sm text-red-600 dark:text-red-400">
@@ -160,7 +401,7 @@ export default function Home() {
       {suggestions && (
         <div className="flex flex-col gap-8">
           <section>
-            <h2 className="mb-3 text-lg font-semibold">
+            <h2 className="mb-3 text-lg font-semibold text-orange-900 dark:text-orange-100">
               🍳 지금 바로 만들 수 있어요
             </h2>
             <div className="flex flex-col gap-4">
@@ -171,12 +412,16 @@ export default function Home() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-lg font-semibold">
+            <h2 className="mb-3 text-lg font-semibold text-orange-900 dark:text-orange-100">
               🛒 조금만 더 사면 만들 수 있어요
             </h2>
             <div className="flex flex-col gap-4">
               {suggestions.nearMisses.map((recipe, i) => (
-                <RecipeCard key={i} recipe={recipe} missing={recipe.missingIngredients} />
+                <RecipeCard
+                  key={i}
+                  recipe={recipe}
+                  missing={recipe.missingIngredients}
+                />
               ))}
             </div>
           </section>
@@ -191,31 +436,52 @@ function RecipeCard({
   missing,
 }: {
   recipe: Recipe;
-  missing?: string[];
+  missing?: IngredientAmount[];
 }) {
   return (
-    <div className="rounded-2xl border border-black/10 p-5 dark:border-white/10">
-      <h3 className="font-semibold">{recipe.name}</h3>
-      {missing && missing.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {missing.map((item) => (
+    <div className="overflow-hidden rounded-2xl border border-orange-100 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex items-center gap-3 bg-orange-50 p-4 dark:bg-zinc-800">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-3xl dark:bg-zinc-900">
+          {recipe.emoji}
+        </div>
+        <div>
+          <h3 className="font-semibold text-orange-950 dark:text-orange-50">
+            {recipe.name}
+          </h3>
+          {missing && missing.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {missing.map((item) => (
+                <span
+                  key={item.name}
+                  className="rounded-full bg-orange-200 px-2.5 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-900/50 dark:text-orange-300"
+                >
+                  장보기: {item.name} {item.amount}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="p-4">
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          {recipe.description}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {recipe.ingredientsUsed.map((item) => (
             <span
-              key={item}
-              className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
+              key={item.name}
+              className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
             >
-              장보기: {item}
+              {item.name} {item.amount}
             </span>
           ))}
         </div>
-      )}
-      <p className="mt-3 text-xs text-zinc-500">
-        사용 재료: {recipe.ingredientsUsed.join(", ")}
-      </p>
-      <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
-        {recipe.steps.map((step, i) => (
-          <li key={i}>{step}</li>
-        ))}
-      </ol>
+        <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
+          {recipe.steps.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }

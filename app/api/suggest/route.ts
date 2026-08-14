@@ -2,7 +2,14 @@ import { NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { suggestRecipes } from "@/lib/anthropic";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => null);
+  const rawServings = Number(body?.servings);
+  const servings =
+    Number.isInteger(rawServings) && rawServings >= 1 && rawServings <= 6
+      ? rawServings
+      : 2;
+
   const supabase = getSupabaseServerClient();
   const { data: ingredients, error } = await supabase
     .from("ingredients")
@@ -22,8 +29,8 @@ export async function POST() {
   }
 
   try {
-    const result = await suggestRecipes(pantry);
-    return NextResponse.json({ pantry, ...result });
+    const result = await suggestRecipes(pantry, servings);
+    return NextResponse.json({ pantry, servings, ...result });
   } catch (err) {
     console.error("Claude suggestion failed:", err);
     return NextResponse.json(

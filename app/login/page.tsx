@@ -34,9 +34,11 @@ export default function LoginPage() {
     <div className="flex flex-1 items-center justify-center px-4">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-2xl border border-black/10 bg-white p-8 shadow-sm dark:border-white/10 dark:bg-zinc-900"
+        className="w-full max-w-sm rounded-2xl border border-orange-100 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
       >
-        <h1 className="mb-1 text-xl font-semibold">집밥 레시피</h1>
+        <h1 className="mb-1 flex items-center gap-2 text-xl font-semibold text-orange-900 dark:text-orange-100">
+          <span className="text-2xl">🍚</span> 집밥 레시피
+        </h1>
         <p className="mb-6 text-sm text-zinc-500">
           비밀번호를 입력하세요.
         </p>
@@ -46,7 +48,7 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           placeholder="비밀번호"
           autoFocus
-          className="w-full rounded-lg border border-black/10 bg-transparent px-4 py-3 text-base outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40"
+          className="w-full rounded-lg border border-orange-100 bg-transparent px-4 py-3 text-base outline-none focus:border-orange-400 dark:border-zinc-700 dark:focus:border-orange-500"
         />
         {error && (
           <p className="mt-3 text-sm text-red-600 dark:text-red-400">
@@ -56,7 +58,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={submitting || password.length === 0}
-          className="mt-4 w-full rounded-lg bg-black px-4 py-3 text-base font-medium text-white transition-opacity disabled:opacity-40 dark:bg-white dark:text-black"
+          className="mt-4 w-full rounded-lg bg-orange-600 px-4 py-3 text-base font-medium text-white transition-opacity disabled:opacity-40"
         >
           {submitting ? "확인 중..." : "입장하기"}
         </button>

@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { CATEGORY_IDS } from "@/lib/categories";
 
 export async function GET() {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .from("ingredients")
-    .select("id, name, created_at")
+    .select("id, name, category, created_at")
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -19,6 +20,11 @@ export async function GET() {
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const category =
+    typeof body?.category === "string" &&
+    CATEGORY_IDS.includes(body.category as (typeof CATEGORY_IDS)[number])
+      ? body.category
+      : "etc";
 
   if (!name) {
     return NextResponse.json(
@@ -30,8 +36,8 @@ export async function POST(request: Request) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .from("ingredients")
-    .insert({ name })
-    .select("id, name, created_at")
+    .insert({ name, category })
+    .select("id, name, category, created_at")
     .single();
 
   if (error) {

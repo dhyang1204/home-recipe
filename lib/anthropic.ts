@@ -2,14 +2,21 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
 
-const RecipeSchema = z.object({
+const IngredientAmountSchema = z.object({
   name: z.string(),
-  ingredientsUsed: z.array(z.string()),
+  amount: z.string(),
+});
+
+const RecipeSchema = z.object({
+  emoji: z.string(),
+  name: z.string(),
+  description: z.string(),
+  ingredientsUsed: z.array(IngredientAmountSchema),
   steps: z.array(z.string()),
 });
 
 const NearMissRecipeSchema = RecipeSchema.extend({
-  missingIngredients: z.array(z.string()),
+  missingIngredients: z.array(IngredientAmountSchema),
 });
 
 const SuggestionResultSchema = z.object({
@@ -17,6 +24,7 @@ const SuggestionResultSchema = z.object({
   nearMisses: z.array(NearMissRecipeSchema),
 });
 
+export type IngredientAmount = z.infer<typeof IngredientAmountSchema>;
 export type Recipe = z.infer<typeof RecipeSchema>;
 export type NearMissRecipe = z.infer<typeof NearMissRecipeSchema>;
 export type SuggestionResult = z.infer<typeof SuggestionResultSchema>;
@@ -29,10 +37,17 @@ const SYSTEM_PROMPT = `당신은 한국 가정식(집밥)을 잘 아는 요리 �
 1. fullMatches: 지금 가진 재료만으로 바로 만들 수 있는 요리 2~4개
 2. nearMisses: 재료가 1~2개만 더 있으면 만들 수 있는 요리 2~4개 (missingIngredients에 부족한 재료를 정확히 1~2개 적을 것)
 
-각 요리는 실제로 맛있고 한국 가정에서 흔히 해먹는 요리로 추천하고, steps는 조리 순서를 번호 없이 간결한 한국어 문장으로 나열하세요.`;
+각 요리에 대해 다음을 지켜서 작성하세요:
+- emoji: 그 요리를 가장 잘 나타내는 이모지 1개
+- description: 이 요리가 어떤 맛인지, 어떤 상황에 잘 어울리는지 2~3문장으로 소개
+- ingredientsUsed / missingIngredients: 각 재료마다 "name"과 "amount"를 채우세요. amount는 반드시 사용자가 지정한 인분 수에 정확히 맞춘 실제 분량(예: "2개", "300ml", "1큰술", "반 개")으로 적으세요. 물, 육수 등 목록에 없던 재료라도 조리에 필요하면 missingIngredients(또는 이미 있는 조미료라면 ingredientsUsed)에 분량과 함께 포함하세요.
+- steps: 최소 5단계 이상, 각 단계마다 시간·불 세기·써는 크기 등 구체적인 요령을 포함해 조리 초보자도 따라할 수 있을 만큼 자세히 작성 (번호는 붙이지 말 것)
+
+실제로 맛있고 한국 가정에서 흔히 해먹는 요리로만 추천하세요.`;
 
 export async function suggestRecipes(
   pantry: string[],
+  servings: number,
 ): Promise<SuggestionResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -43,7 +58,7 @@ export async function suggestRecipes(
 
   const message = await client.messages.parse({
     model: "claude-sonnet-5",
-    max_tokens: 4096,
+    max_tokens: 8192,
     output_config: {
       effort: "medium",
       format: zodOutputFormat(SuggestionResultSchema),
@@ -52,7 +67,7 @@ export async function suggestRecipes(
     messages: [
       {
         role: "user",
-        content: `현재 집에 있는 재료: ${pantry.join(", ")}\n\n위 재료를 바탕으로 fullMatches와 nearMisses를 추천해줘.`,
+        content: `현재 집에 있는 재료: ${pantry.join(", ")}\n\n${servings}인분 기준으로 fullMatches와 nearMisses를 추천해줘. 모든 재료 분량은 반드시 ${servings}인분에 맞게 계산해줘.`,
       },
     ],
   });

@@ -18,5 +18,6 @@ export function getSupabaseServerClient() {
 export interface Ingredient {
   id: string;
   name: string;
+  category: string;
   created_at: string;
 }
