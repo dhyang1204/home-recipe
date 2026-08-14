@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CATEGORIES, type CategoryId } from "@/lib/categories";
+import { CATEGORIES } from "@/lib/categories";
 import type { Recipe, NearMissRecipe, IngredientAmount } from "@/lib/anthropic";
 
 interface Ingredient {
@@ -16,15 +16,15 @@ interface SuggestResponse {
   nearMisses: NearMissRecipe[];
 }
 
-type Tab = "ingredients" | "recipes";
+type Tab = "home" | "recipes" | "ingredients";
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("ingredients");
+  const [tab, setTab] = useState<Tab>("home");
 
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [loadingIngredients, setLoadingIngredients] = useState(true);
   const [newName, setNewName] = useState("");
-  const [newCategory, setNewCategory] = useState<CategoryId>("veggie");
+  const [addingIngredient, setAddingIngredient] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
   const [servings, setServings] = useState(2);
@@ -53,19 +53,21 @@ export default function Home() {
     if (!name) return;
 
     setAddError(null);
+    setAddingIngredient(true);
     const res = await fetch("/api/ingredients", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, category: newCategory }),
+      body: JSON.stringify({ name }),
     });
 
     if (res.ok) {
       setNewName("");
-      loadIngredients();
+      await loadIngredients();
     } else {
       const data = await res.json().catch(() => null);
       setAddError(data?.error ?? "재료를 추가하지 못했습니다.");
     }
+    setAddingIngredient(false);
   }
 
   async function handleRemove(id: string) {
@@ -114,15 +116,22 @@ export default function Home() {
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-28 pt-5">
-        {tab === "ingredients" ? (
+        {tab === "home" && (
+          <HomeView
+            ingredientCount={ingredients.length}
+            onSuggest={handleSuggest}
+            suggestLoading={suggestLoading}
+            goToIngredients={() => setTab("ingredients")}
+          />
+        )}
+        {tab === "ingredients" && (
           <IngredientsView
             grouped={grouped}
             totalCount={ingredients.length}
             loading={loadingIngredients}
             newName={newName}
             setNewName={setNewName}
-            newCategory={newCategory}
-            setNewCategory={setNewCategory}
+            addingIngredient={addingIngredient}
             addError={addError}
             onAdd={handleAdd}
             onRemove={handleRemove}
@@ -131,10 +140,9 @@ export default function Home() {
             onSuggest={handleSuggest}
             suggestLoading={suggestLoading}
           />
-        ) : (
+        )}
+        {tab === "recipes" && (
           <RecipesView
-            servings={servings}
-            setServings={setServings}
             onSuggest={handleSuggest}
             suggestLoading={suggestLoading}
             suggestError={suggestError}
@@ -142,23 +150,30 @@ export default function Home() {
             hasIngredients={ingredients.length > 0}
             resultView={resultView}
             setResultView={setResultView}
+            goToIngredients={() => setTab("ingredients")}
           />
         )}
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 border-t border-orange-100 bg-white/95 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
-        <div className="mx-auto flex max-w-2xl">
+        <div className="mx-auto flex max-w-2xl gap-1.5 p-1.5">
           <TabButton
-            active={tab === "ingredients"}
-            emoji="🥬"
-            label="내 재료"
-            onClick={() => setTab("ingredients")}
+            active={tab === "home"}
+            emoji="🏠"
+            label="홈"
+            onClick={() => setTab("home")}
           />
           <TabButton
             active={tab === "recipes"}
             emoji="🍳"
             label="레시피 추천"
             onClick={() => setTab("recipes")}
+          />
+          <TabButton
+            active={tab === "ingredients"}
+            emoji="🥬"
+            label="내 재료"
+            onClick={() => setTab("ingredients")}
           />
         </div>
       </nav>
@@ -180,15 +195,69 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition-colors ${
+      className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl py-2.5 text-xs font-semibold transition-colors ${
         active
-          ? "text-orange-600 dark:text-orange-400"
-          : "text-zinc-400 dark:text-zinc-500"
+          ? "bg-orange-600 text-white shadow-sm"
+          : "text-zinc-400 hover:bg-orange-50 dark:text-zinc-500 dark:hover:bg-zinc-800"
       }`}
     >
       <span className="text-xl">{emoji}</span>
       {label}
     </button>
+  );
+}
+
+function HomeView({
+  ingredientCount,
+  onSuggest,
+  suggestLoading,
+  goToIngredients,
+}: {
+  ingredientCount: number;
+  onSuggest: () => void;
+  suggestLoading: boolean;
+  goToIngredients: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="rounded-2xl border border-orange-100 bg-white p-6 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="text-5xl">🍚</div>
+        <h2 className="mt-3 text-lg font-bold text-orange-950 dark:text-orange-50">
+          집에 있는 재료로, 오늘 뭐 해먹지?
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+          냉장고 속 재료를 등록해두면 AI가 지금 바로 만들 수 있는 요리와,
+          한두 가지만 더 사면 만들 수 있는 요리를 인분 수에 맞춰
+          추천해드려요.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <p className="text-sm text-zinc-500">
+          현재 등록된 재료{" "}
+          <span className="font-semibold text-orange-700 dark:text-orange-300">
+            {ingredientCount}개
+          </span>
+        </p>
+
+        {ingredientCount === 0 ? (
+          <button
+            onClick={goToIngredients}
+            className="mt-4 w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md"
+          >
+            재료부터 등록하기
+          </button>
+        ) : (
+          <button
+            onClick={onSuggest}
+            disabled={suggestLoading}
+            className="mt-4 w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md disabled:opacity-40"
+          >
+            {suggestLoading ? "레시피 생각 중..." : "레시피 추천받기"}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -198,8 +267,7 @@ function IngredientsView({
   loading,
   newName,
   setNewName,
-  newCategory,
-  setNewCategory,
+  addingIngredient,
   addError,
   onAdd,
   onRemove,
@@ -218,8 +286,7 @@ function IngredientsView({
   loading: boolean;
   newName: string;
   setNewName: (v: string) => void;
-  newCategory: CategoryId;
-  setNewCategory: (v: CategoryId) => void;
+  addingIngredient: boolean;
   addError: string | null;
   onAdd: (e: React.FormEvent) => void;
   onRemove: (id: string) => void;
@@ -234,32 +301,24 @@ function IngredientsView({
         onSubmit={onAdd}
         className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
       >
-        <input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="예: 계란"
-          className="w-full rounded-lg border border-orange-100 bg-transparent px-4 py-2.5 text-base outline-none focus:border-orange-400 dark:border-zinc-700 dark:focus:border-orange-500"
-        />
-        <div className="mt-2 flex gap-2">
-          <select
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value as CategoryId)}
-            className="min-w-0 flex-1 rounded-lg border border-orange-100 bg-transparent px-3 py-2.5 text-sm outline-none focus:border-orange-400 dark:border-zinc-700 dark:focus:border-orange-500"
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.emoji} {c.label}
-              </option>
-            ))}
-          </select>
+        <div className="flex gap-2">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="예: 계란"
+            className="min-w-0 flex-1 rounded-lg border border-orange-100 bg-transparent px-4 py-2.5 text-base outline-none focus:border-orange-400 dark:border-zinc-700 dark:focus:border-orange-500"
+          />
           <button
             type="submit"
-            disabled={newName.trim().length === 0}
+            disabled={newName.trim().length === 0 || addingIngredient}
             className="shrink-0 whitespace-nowrap rounded-lg bg-orange-600 px-5 py-2.5 font-medium text-white disabled:opacity-40"
           >
-            추가
+            {addingIngredient ? "분류 중..." : "추가"}
           </button>
         </div>
+        <p className="mt-2 text-xs text-zinc-400">
+          카테고리는 재료 이름을 보고 자동으로 분류돼요.
+        </p>
         {addError && (
           <p className="mt-2 text-sm text-red-600 dark:text-red-400">
             {addError}
@@ -310,62 +369,36 @@ function IngredientsView({
         )}
       </section>
 
-      <ServingsAndSuggestButton
-        servings={servings}
-        setServings={setServings}
-        onSuggest={onSuggest}
-        disabled={totalCount === 0}
-        loading={suggestLoading}
-      />
-    </div>
-  );
-}
-
-function ServingsAndSuggestButton({
-  servings,
-  setServings,
-  onSuggest,
-  disabled,
-  loading,
-}: {
-  servings: number;
-  setServings: (n: number) => void;
-  onSuggest: () => void;
-  disabled: boolean;
-  loading: boolean;
-}) {
-  return (
-    <div className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <p className="mb-2 text-sm font-medium text-zinc-500">인분 수</p>
-      <div className="mb-4 flex gap-2">
-        {[1, 2, 3, 4, 5, 6].map((n) => (
-          <button
-            key={n}
-            onClick={() => setServings(n)}
-            className={`h-10 w-10 shrink-0 rounded-full text-sm font-medium transition-colors ${
-              servings === n
-                ? "bg-orange-600 text-white"
-                : "bg-orange-50 text-orange-800 dark:bg-zinc-800 dark:text-orange-200"
-            }`}
-          >
-            {n}
-          </button>
-        ))}
+      <div className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <p className="mb-2 text-sm font-medium text-zinc-500">인분 수</p>
+        <div className="mb-4 flex gap-2">
+          {[1, 2, 3, 4, 5, 6].map((n) => (
+            <button
+              key={n}
+              onClick={() => setServings(n)}
+              className={`h-10 w-10 shrink-0 rounded-full text-sm font-medium transition-colors ${
+                servings === n
+                  ? "bg-orange-600 text-white"
+                  : "bg-orange-50 text-orange-800 dark:bg-zinc-800 dark:text-orange-200"
+              }`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={onSuggest}
+          disabled={totalCount === 0 || suggestLoading}
+          className="w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md disabled:opacity-40"
+        >
+          {suggestLoading ? "레시피 생각 중..." : `${servings}인분 레시피 추천받기`}
+        </button>
       </div>
-      <button
-        onClick={onSuggest}
-        disabled={disabled || loading}
-        className="w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md disabled:opacity-40"
-      >
-        {loading ? "레시피 생각 중..." : `${servings}인분 레시피 추천받기`}
-      </button>
     </div>
   );
 }
 
 function RecipesView({
-  servings,
-  setServings,
   onSuggest,
   suggestLoading,
   suggestError,
@@ -373,9 +406,8 @@ function RecipesView({
   hasIngredients,
   resultView,
   setResultView,
+  goToIngredients,
 }: {
-  servings: number;
-  setServings: (n: number) => void;
   onSuggest: () => void;
   suggestLoading: boolean;
   suggestError: string | null;
@@ -383,31 +415,66 @@ function RecipesView({
   hasIngredients: boolean;
   resultView: "full" | "near";
   setResultView: (v: "full" | "near") => void;
+  goToIngredients: () => void;
 }) {
+  if (!suggestions && !suggestLoading) {
+    return (
+      <div className="flex flex-col items-center gap-4 rounded-2xl border border-orange-100 bg-white p-8 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="text-4xl">🍳</div>
+        {suggestError && (
+          <p className="text-sm text-red-600 dark:text-red-400">
+            {suggestError}
+          </p>
+        )}
+        {hasIngredients ? (
+          <>
+            <p className="text-sm text-zinc-500">
+              아직 추천받은 레시피가 없어요.
+            </p>
+            <button
+              onClick={onSuggest}
+              className="w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md"
+            >
+              레시피 추천받기
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-zinc-500">
+              먼저 &apos;내 재료&apos; 탭에서 재료를 추가해주세요.
+            </p>
+            <button
+              onClick={goToIngredients}
+              className="w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md"
+            >
+              재료 등록하러 가기
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (suggestLoading) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-orange-100 bg-white p-10 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="text-4xl animate-bounce">🍳</div>
+        <p className="text-sm text-zinc-500">레시피 생각 중...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-6">
-      <ServingsAndSuggestButton
-        servings={servings}
-        setServings={setServings}
-        onSuggest={onSuggest}
-        disabled={!hasIngredients}
-        loading={suggestLoading}
-      />
-
-      {!hasIngredients && !suggestions && (
-        <p className="text-center text-sm text-zinc-400">
-          먼저 &apos;내 재료&apos; 탭에서 재료를 추가해주세요.
-        </p>
-      )}
-
-      {suggestError && (
-        <p className="text-sm text-red-600 dark:text-red-400">
-          {suggestError}
-        </p>
-      )}
+    <div className="flex flex-col gap-4">
+      <button
+        onClick={onSuggest}
+        className="self-end text-xs font-medium text-orange-600 underline-offset-2 hover:underline dark:text-orange-400"
+      >
+        ↻ 다시 추천받기
+      </button>
 
       {suggestions && (
-        <div className="flex flex-col gap-4">
+        <>
           <div className="flex gap-2 rounded-xl bg-orange-100/60 p-1 dark:bg-zinc-800">
             <button
               onClick={() => setResultView("full")}
@@ -448,7 +515,7 @@ function RecipesView({
               ))}
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

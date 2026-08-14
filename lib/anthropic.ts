@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
+import { CATEGORY_IDS, type CategoryId } from "./categories";
 
 const IngredientAmountSchema = z.object({
   name: z.string(),
@@ -77,4 +78,34 @@ export async function suggestRecipes(
   }
 
   return message.parsed_output;
+}
+
+const CategorySchema = z.object({
+  category: z.enum(CATEGORY_IDS as [CategoryId, ...CategoryId[]]),
+});
+
+export async function categorizeIngredient(
+  name: string,
+): Promise<CategoryId> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY environment variable is not set");
+  }
+
+  const client = new Anthropic({ apiKey });
+
+  const message = await client.messages.parse({
+    model: "claude-haiku-4-5",
+    max_tokens: 100,
+    output_config: {
+      format: zodOutputFormat(CategorySchema),
+    },
+    system:
+      "식재료 이름을 보고 다음 카테고리 중 가장 알맞은 하나를 고르세요: " +
+      "veggie(채소/과일), meat(육류/수산), dairy(난류/유제품), grain(곡물/면류), " +
+      "sauce(조미료/소스), etc(그 외 분류하기 애매한 재료).",
+    messages: [{ role: "user", content: `재료 이름: ${name}` }],
+  });
+
+  return message.parsed_output?.category ?? "etc";
 }
