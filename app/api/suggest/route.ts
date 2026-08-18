@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import { suggestRecipes } from "@/lib/anthropic";
+import { suggestDishNames } from "@/lib/anthropic";
+import { searchRecipeVideo, type RecipeVideo } from "@/lib/youtube";
 
-export async function POST(request: Request) {
-  const body = await request.json().catch(() => null);
-  const rawServings = Number(body?.servings);
-  const servings =
-    Number.isInteger(rawServings) && rawServings >= 1 && rawServings <= 6
-      ? rawServings
-      : 2;
+async function withVideo<T extends { name: string }>(
+  dish: T,
+): Promise<T & { video: RecipeVideo | null }> {
+  const video = await searchRecipeVideo(dish.name).catch((err) => {
+    console.error(`YouTube search failed for "${dish.name}":`, err);
+    return null;
+  });
+  return { ...dish, video };
+}
 
+export async function POST() {
   const supabase = getSupabaseServerClient();
   const { data: ingredients, error } = await supabase
     .from("ingredients")
@@ -29,10 +33,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await suggestRecipes(pantry, servings);
-    return NextResponse.json({ pantry, servings, ...result });
+    const dishes = await suggestDishNames(pantry);
+    const [fullMatches, nearMisses] = await Promise.all([
+      Promise.all(dishes.fullMatches.map(withVideo)),
+      Promise.all(dishes.nearMisses.map(withVideo)),
+    ]);
+
+    return NextResponse.json({ pantry, fullMatches, nearMisses });
   } catch (err) {
-    console.error("Claude suggestion failed:", err);
+    console.error("Dish suggestion failed:", err);
     return NextResponse.json(
       { error: "레시피를 생성하는 중 오류가 발생했습니다." },
       { status: 502 },

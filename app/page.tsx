@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { CATEGORIES } from "@/lib/categories";
-import type { Recipe, NearMissRecipe, IngredientAmount } from "@/lib/anthropic";
+import type { Dish, NearMissDish } from "@/lib/anthropic";
+import type { RecipeVideo } from "@/lib/youtube";
 
 interface Ingredient {
   id: string;
@@ -11,9 +13,12 @@ interface Ingredient {
   created_at: string;
 }
 
+type DishWithVideo = Dish & { video: RecipeVideo | null };
+type NearMissDishWithVideo = NearMissDish & { video: RecipeVideo | null };
+
 interface SuggestResponse {
-  fullMatches: Recipe[];
-  nearMisses: NearMissRecipe[];
+  fullMatches: DishWithVideo[];
+  nearMisses: NearMissDishWithVideo[];
 }
 
 type Tab = "home" | "recipes" | "ingredients";
@@ -27,7 +32,6 @@ export default function Home() {
   const [addingIngredient, setAddingIngredient] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  const [servings, setServings] = useState(2);
   const [suggestions, setSuggestions] = useState<SuggestResponse | null>(
     null,
   );
@@ -84,11 +88,7 @@ export default function Home() {
     setResultView("full");
     setTab("recipes");
 
-    const res = await fetch("/api/suggest", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ servings }),
-    });
+    const res = await fetch("/api/suggest", { method: "POST" });
     const data = await res.json();
 
     if (res.ok) {
@@ -135,8 +135,6 @@ export default function Home() {
             addError={addError}
             onAdd={handleAdd}
             onRemove={handleRemove}
-            servings={servings}
-            setServings={setServings}
             onSuggest={handleSuggest}
             suggestLoading={suggestLoading}
           />
@@ -227,8 +225,8 @@ function HomeView({
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
           냉장고 속 재료를 등록해두면 AI가 지금 바로 만들 수 있는 요리와,
-          한두 가지만 더 사면 만들 수 있는 요리를 인분 수에 맞춰
-          추천해드려요.
+          한두 가지만 더 사면 만들 수 있는 요리를 골라주고, 실제 유튜브
+          레시피 영상까지 바로 찾아드려요.
         </p>
       </div>
 
@@ -253,7 +251,7 @@ function HomeView({
             disabled={suggestLoading}
             className="mt-4 w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md disabled:opacity-40"
           >
-            {suggestLoading ? "레시피 생각 중..." : "레시피 추천받기"}
+            {suggestLoading ? "레시피 찾는 중..." : "레시피 추천받기"}
           </button>
         )}
       </div>
@@ -271,8 +269,6 @@ function IngredientsView({
   addError,
   onAdd,
   onRemove,
-  servings,
-  setServings,
   onSuggest,
   suggestLoading,
 }: {
@@ -290,8 +286,6 @@ function IngredientsView({
   addError: string | null;
   onAdd: (e: React.FormEvent) => void;
   onRemove: (id: string) => void;
-  servings: number;
-  setServings: (n: number) => void;
   onSuggest: () => void;
   suggestLoading: boolean;
 }) {
@@ -369,31 +363,13 @@ function IngredientsView({
         )}
       </section>
 
-      <div className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="mb-2 text-sm font-medium text-zinc-500">인분 수</p>
-        <div className="mb-4 flex gap-2">
-          {[1, 2, 3, 4, 5, 6].map((n) => (
-            <button
-              key={n}
-              onClick={() => setServings(n)}
-              className={`h-10 w-10 shrink-0 rounded-full text-sm font-medium transition-colors ${
-                servings === n
-                  ? "bg-orange-600 text-white"
-                  : "bg-orange-50 text-orange-800 dark:bg-zinc-800 dark:text-orange-200"
-              }`}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={onSuggest}
-          disabled={totalCount === 0 || suggestLoading}
-          className="w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md disabled:opacity-40"
-        >
-          {suggestLoading ? "레시피 생각 중..." : `${servings}인분 레시피 추천받기`}
-        </button>
-      </div>
+      <button
+        onClick={onSuggest}
+        disabled={totalCount === 0 || suggestLoading}
+        className="w-full rounded-xl bg-orange-600 py-3.5 text-base font-semibold text-white shadow-md disabled:opacity-40"
+      >
+        {suggestLoading ? "레시피 찾는 중..." : "레시피 추천받기"}
+      </button>
     </div>
   );
 }
@@ -459,7 +435,7 @@ function RecipesView({
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-orange-100 bg-white p-10 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div className="text-4xl animate-bounce">🍳</div>
-        <p className="text-sm text-zinc-500">레시피 생각 중...</p>
+        <p className="text-sm text-zinc-500">레시피 찾는 중...</p>
       </div>
     );
   }
@@ -500,17 +476,17 @@ function RecipesView({
 
           {resultView === "full" ? (
             <div className="flex flex-col gap-4">
-              {suggestions.fullMatches.map((recipe, i) => (
-                <RecipeCard key={i} recipe={recipe} />
+              {suggestions.fullMatches.map((dish, i) => (
+                <RecipeCard key={i} dish={dish} />
               ))}
             </div>
           ) : (
             <div className="flex flex-col gap-4">
-              {suggestions.nearMisses.map((recipe, i) => (
+              {suggestions.nearMisses.map((dish, i) => (
                 <RecipeCard
                   key={i}
-                  recipe={recipe}
-                  missing={recipe.missingIngredients}
+                  dish={dish}
+                  missing={dish.missingIngredients}
                 />
               ))}
             </div>
@@ -522,56 +498,74 @@ function RecipesView({
 }
 
 function RecipeCard({
-  recipe,
+  dish,
   missing,
 }: {
-  recipe: Recipe;
-  missing?: IngredientAmount[];
+  dish: DishWithVideo;
+  missing?: string[];
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-orange-100 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="flex items-center gap-3 bg-orange-50 p-4 dark:bg-zinc-800">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-3xl dark:bg-zinc-900">
-          {recipe.emoji}
-        </div>
-        <div>
-          <h3 className="font-semibold text-orange-950 dark:text-orange-50">
-            {recipe.name}
-          </h3>
-          {missing && missing.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {missing.map((item) => (
-                <span
-                  key={item.name}
-                  className="rounded-full bg-orange-200 px-2.5 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-900/50 dark:text-orange-300"
-                >
-                  장보기: {item.name} {item.amount}
-                </span>
-              ))}
+      <div className="p-4 pb-2">
+        <h3 className="font-semibold text-orange-950 dark:text-orange-50">
+          {dish.name}
+        </h3>
+        {missing && missing.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {missing.map((item) => (
+              <span
+                key={item}
+                className="rounded-full bg-orange-200 px-2.5 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-900/50 dark:text-orange-300"
+              >
+                장보기: {item}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {dish.video ? (
+        <a
+          href={dish.video.videoUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block"
+        >
+          <div className="relative aspect-video w-full bg-zinc-100 dark:bg-zinc-800">
+            <Image
+              src={dish.video.thumbnailUrl}
+              alt={dish.video.title}
+              fill
+              sizes="(max-width: 640px) 100vw, 640px"
+              className="object-cover"
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors hover:bg-black/20">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-xl text-white">
+                ▶
+              </div>
             </div>
-          )}
-        </div>
-      </div>
-      <div className="p-4">
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          {recipe.description}
-        </p>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {recipe.ingredientsUsed.map((item) => (
-            <span
-              key={item.name}
-              className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-            >
-              {item.name} {item.amount}
-            </span>
-          ))}
-        </div>
-        <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-zinc-700 dark:text-zinc-300">
-          {recipe.steps.map((step, i) => (
-            <li key={i}>{step}</li>
-          ))}
-        </ol>
-      </div>
+          </div>
+          <div className="p-3">
+            <p className="line-clamp-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+              {dish.video.title}
+            </p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {dish.video.channelTitle}
+            </p>
+          </div>
+        </a>
+      ) : (
+        <a
+          href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
+            dish.name + " 레시피",
+          )}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block px-4 pb-4 text-sm font-medium text-orange-600 hover:underline dark:text-orange-400"
+        >
+          유튜브에서 &quot;{dish.name}&quot; 검색하기 →
+        </a>
+      )}
     </div>
   );
 }
